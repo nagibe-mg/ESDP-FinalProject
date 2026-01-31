@@ -7,11 +7,13 @@ Earth System Data Processing at the University of Cologne. Final project for Win
 ## Load IMERG data
 
 ### Folder structure
+```
 ├── ESDP-FinalProject
 │   └── GPM
 │       └── RS
 │   └── configfile.py
 │   └── load_IMERG-data.ipynb
+```
 
 I followed the following tutorial for downloading the IMERG data:
 [IMERG tutorial](https://gpm-api.readthedocs.io/en/latest/tutorials/tutorial_02_IMERG.html)
