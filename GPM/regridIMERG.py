@@ -3,7 +3,7 @@ import healpy as hp
 import numpy as np
 
 
-def regrid_to_healpix(source_file, nside_list=[8, 16]):
+def regrid_to_healpix(source_file, nside_val=128):
     """
     Fast HEALPix regridding using direct pixel assignment (like ERA5 code)
     """
@@ -29,63 +29,63 @@ def regrid_to_healpix(source_file, nside_list=[8, 16]):
     
     regridded_data = {}
     
-    for nside in nside_list:
-        print(f"  ... Processing NSIDE={nside}")
+    
+    print(f"  ... Processing NSIDE={nside_val}")
+    
+    # Get HEALPix pixel indices for all grid points
+    pix_indices = hp.ang2pix(nside_val, theta, phi)
+    npix = hp.nside2npix(nside_val)
+    
+    # Process each variable
+    data_vars = {}
+    
+    for var_name in ds.data_vars:
+        # Skip coordinate variables
+        if var_name in [lat_dim, lon_dim, 'crsWGS84']:
+            continue
         
-        # Get HEALPix pixel indices for all grid points
-        pix_indices = hp.ang2pix(nside, theta, phi)
-        npix = hp.nside2npix(nside)
+        print(f"    Processing variable: {var_name}")
         
-        # Process each variable
-        data_vars = {}
+        data = ds[var_name].values  # Shape: (time, lat, lon)
         
-        for var_name in ds.data_vars:
-            # Skip coordinate variables
-            if var_name in [lat_dim, lon_dim, 'crsWGS84']:
-                continue
+        # Initialize HEALPix map
+        healpix_map = np.full((data.shape[0], npix), hp.UNSEEN, dtype=np.float32)
+        
+        # Flatten spatial dimensions
+        data_flat = data.reshape(data.shape[0], -1)  # (time, lat*lon)
+        
+        # For each timestep, bin values into HEALPix pixels
+        for t in range(data.shape[0]):
+            valid = ~np.isnan(data_flat[t])
             
-            print(f"    Processing variable: {var_name}")
-            
-            data = ds[var_name].values  # Shape: (time, lat, lon)
-            
-            # Initialize HEALPix map
-            healpix_map = np.full((data.shape[0], npix), hp.UNSEEN, dtype=np.float32)
-            
-            # Flatten spatial dimensions
-            data_flat = data.reshape(data.shape[0], -1)  # (time, lat*lon)
-            
-            # For each timestep, bin values into HEALPix pixels
-            for t in range(data.shape[0]):
-                valid = ~np.isnan(data_flat[t])
+            if np.any(valid):
+                # Count how many grid points fall in each pixel
+                counts = np.bincount(pix_indices[valid], minlength=npix)
                 
-                if np.any(valid):
-                    # Count how many grid points fall in each pixel
-                    counts = np.bincount(pix_indices[valid], minlength=npix)
-                    
-                    # Sum values in each pixel
-                    sums = np.bincount(
-                        pix_indices[valid], 
-                        weights=data_flat[t, valid], 
-                        minlength=npix
-                    )
-                    
-                    # Average (only for pixels with data)
-                    mask = counts > 0
-                    healpix_map[t, mask] = sums[mask] / counts[mask]
-            
-            # Create DataArray
-            data_vars[var_name] = xr.DataArray(
-                healpix_map,
-                dims=['time', 'healpix_pixel'],
-                coords={
-                    'time': ds['time'],
-                    'healpix_pixel': np.arange(npix)
-                }
-            )
+                # Sum values in each pixel
+                sums = np.bincount(
+                    pix_indices[valid], 
+                    weights=data_flat[t, valid], 
+                    minlength=npix
+                )
+                
+                # Average (only for pixels with data)
+                mask = counts > 0
+                healpix_map[t, mask] = sums[mask] / counts[mask]
+        
+        # Create DataArray
+        data_vars[var_name] = xr.DataArray(
+            healpix_map,
+            dims=['time', 'healpix_pixel'],
+            coords={
+                'time': ds['time'],
+                'healpix_pixel': np.arange(npix)
+            }
+        )
         
         # Create Dataset
         ds_healpix = xr.Dataset(data_vars)
-        ds_healpix.attrs['nside'] = nside
+        ds_healpix.attrs['nside_val'] = nside_val
         ds_healpix.attrs.update(ds.attrs)  # Copy original attributes
         
         # Verify data
@@ -97,7 +97,7 @@ def regrid_to_healpix(source_file, nside_list=[8, 16]):
             if len(valid_data) > 0:
                 print(f"    Data range: {np.min(valid_data):.3f} to {np.max(valid_data):.3f}")
         
-        regridded_data[nside] = ds_healpix
+        regridded_data[nside_val] = ds_healpix
     
     ds.close()
     return regridded_data

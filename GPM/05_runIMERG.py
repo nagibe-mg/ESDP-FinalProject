@@ -48,7 +48,7 @@ def daily_routine(start, end): #, region=None):
             
             
 
-            print("Regridding to HEALPix (NSIDE 8 and 16).") 
+            print("Regridding to HEALPix (NSIDE 128).") 
             #re.regrid_to_healpix(tmp_file)
             regridded_data = re.regrid_to_healpix(tmp_file)
             
