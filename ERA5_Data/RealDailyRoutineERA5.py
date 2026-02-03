@@ -5,9 +5,11 @@ import numpy as np
 import xarray as xr 
 import healpy as hp
 import matplotlib.pyplot as plt
-from healpy.newvisufunc import projview
 import json
 import urllib.request
+import imageio.v2 as imageio
+from IPython.display import Image, display
+
 
  
 StoreZARR = "era5_precipitation.zarr"
@@ -213,7 +215,147 @@ def plot_precip_scatter(store_path, target_date, nside_val=128):
     ax.grid(True, linestyle='--', alpha=0.5)
     
     plt.show()
+    
+def create_precip_animation(store_path, start_date, end_date, nside_val=128):
+    frames_dir = "frames_may_2014"
+    os.makedirs(frames_dir, exist_ok=True)
+    
+    images = []
+    current_date = start_date
+    
+    while current_date <= end_date:
+        date_str = current_date.strftime('%Y-%m-%d')
+        save_path = os.path.join(frames_dir, f"frame_{date_str}.png")
+        ds_zarr = xr.open_zarr(store_path, group=f"NSIDE_{nside_val}", consolidated=True)
+        try:
+            sample = ds_zarr.sel(time=date_str, method='nearest')
+            precip_mm = sample['tp'].values * 1000
+            precip_mm = np.nan_to_num(precip_mm, nan=0.0)
+            npix = len(precip_mm)
+            theta, phi = hp.pix2ang(nside_val, np.arange(npix))
+            lats = 90.0 - np.degrees(theta)
+            lons = np.degrees(phi)
+            lons = (lons + 180) % 360 - 180
+            mask = (lons >= -120) & (lons <= -85) & (lats >= 12) & (lats <= 35) & (precip_mm > 0.05)
+            plot_lons, plot_lats, plot_data = lons[mask], lats[mask], precip_mm[mask]
+            fig, ax = plt.subplots(figsize=(10, 8))
+            sc = ax.scatter(plot_lons, plot_lats, c=plot_data, cmap="Blues", 
+                    vmin=0, vmax=60, s=65, marker='o', edgecolors='none')
+            add_mexico_border_standard()
+            ax.set_title(f"Precipitation | {date_str}", fontsize=16)
+            ax.set_xlim([-118, -86])
+            ax.set_ylim([14, 33])
+            ax.set_xlabel("Longitude")
+            ax.set_ylabel("Latitude")
+            ax.grid(True, linestyle='--', alpha=0.5)
 
+
+            cbar = plt.colorbar(sc, ax=ax, orientation='horizontal', pad=0.1, shrink=0.9)
+            cbar.set_label("Precipitation (mm)", fontsize=12)
+   
+            plt.close(fig)
+            
+            fig.savefig(save_path, dpi=300, bbox_inches='tight')
+            images.append(imageio.imread(save_path))
+            print(f"Saved frame: {date_str}")
+            
+        except KeyError:
+            print(f"Skipping {date_str} (Data not found)")
+            
+        current_date += timedelta(days=1)
+
+    gif_path = "May2014_Precipitation.gif"
+    imageio.mimsave(gif_path, images, fps=1) # 1 frame per second
+    print(f"\n Animation saved: {gif_path}")
+    
+    display(Image(filename=gif_path))
+
+
+
+    
+def process_plot_difference(era5_path, imerg_path, diff_store_path, target_date, nside_val=128):
+    nside_group = f"NSIDE_{nside_val}"
+
+    #load data
+    ds_era5 = xr.open_zarr(era5_path, group=f"NSIDE_{nside_val}", consolidated=True)
+    ds_imerg = xr.open_zarr(imerg_path, group=f"NSIDE_{nside_val}", consolidated=True)
+    # Select date
+    try:
+        era5_sample = ds_era5.sel(time=target_date, method='nearest')
+        imerg_sample = ds_imerg.sel(time=target_date, method='nearest')
+    except KeyError:
+        print("Date not found.")
+        return
+
+    era5_mm = era5_sample['tp'].values * 1000 
+    
+    #### change name here
+    imerg_mm = imerg_sample[imerg_var_name].values
+    
+    # Handle NaNs
+    era5_mm = np.nan_to_num(era5_mm, nan=0.0)
+    imerg_mm = np.nan_to_num(imerg_mm, nan=0.0)
+    # Calculate differences
+    diff_mm = era5_mm - imerg_mm
+    diff_mm.name = "precipitation_difference" # Name the variable for the new Zarr
+    diff_mm.attrs['units'] = "mm"
+    diff_mm.attrs['description'] = "ERA5 - IMERG (Positive = ERA5 wetter)"
+    
+    print(f"Max Overestimate={diff_mm.max():.2f}mm, Max Underestimate={diff_mm.min():.2f}mm")
+    
+    ds_diff = diff_mm.to_dataset()
+    ds_diff = ds_diff.chunk({'time': 1, 'healpix_pixel': -1})
+
+    if not os.path.exists(diff_store_path):
+         mode = 'w'
+         append_dim = None
+    else:
+         if os.path.exists(os.path.join(diff_store_path, nside_group)):
+             mode = 'a'
+             append_dim = 'time'
+         else:
+             mode = 'a'
+             append_dim = None
+
+    print(f"Saving difference for {target_date} to {diff_store_path}...")
+    
+    if append_dim:
+        ds_diff.to_zarr(diff_store_path, group=nside_group, mode=mode, append_dim=append_dim, consolidated=True)
+    else:
+        ds_diff.to_zarr(diff_store_path, group=nside_group, mode=mode, consolidated=True)
+        
+    #plotting, delete after ensuring it works for one day
+    
+    npix = len(diff_mm)
+    theta, phi = hp.pix2ang(nside_val, np.arange(npix))
+    lats = 90.0 - np.degrees(theta)
+    lons = np.degrees(phi)
+    lons = (lons + 180) % 360 - 180 
+    mask = (lons >= -118) & (lons <= -86) & (lats >= 14) & (lats <= 33)
+    plot_lons = lons[mask]
+    plot_lats = lats[mask]
+    plot_diff = diff_mm[mask]
+
+    #Plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Diverging Colormap: RdBu (Red=Dry, Blue=Wet)
+    # vmin/vmax centered on 0 for fair comparison
+    limit = 15 # +/- 15mm difference
+    sc = ax.scatter(plot_lons, plot_lats, c=plot_diff, cmap="RdBu", 
+                    vmin=-limit, vmax=limit, s=65, marker='o', edgecolors='none')
+    
+    add_mexico_border_standard()
+    
+    cbar = plt.colorbar(sc, ax=ax, orientation='horizontal', pad=0.1, shrink=0.7)
+    cbar.set_label("Difference (mm): ERA5 - IMERG\n(Blue = ERA5 Higher, Red = IMERG Higher)", fontsize=12)
+    
+    ax.set_title(f"ERA5 vs IMERG | {target_date}", fontsize=14)
+    ax.set_xlim([-118, -86])
+    ax.set_ylim([14, 33])
+    ax.grid(True, linestyle='--', alpha=0.5)
+    
+    plt.show()
 
 # control flow
 
