@@ -1,9 +1,3 @@
-"""
-Plot and animate daily IMERG precipitation data in HEALPix format
-Style: Scatter plot with Cartopy coastlines
-Data: Already daily accumulated (no need for time.sum())
-"""
-
 import cartopy.crs as ccrs
 import numpy as np
 import xarray as xr
