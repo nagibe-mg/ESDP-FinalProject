@@ -216,3 +216,7 @@ __marimo__/
 
 # Ignore all .nc files
 *.ncGPM/plotIMERG.ipynb
+
+
+# Ignore large .gif files
+*.gif
