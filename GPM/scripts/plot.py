@@ -6,7 +6,102 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
 import pandas as pd
 
-
+def plot_single_day(store_path, day_idx=0, nside=128, 
+                    lat_min=14.0, lat_max=33.0,
+                    lon_min=-118.0, lon_max=-86.0,
+                    cmap='Blues', save_path=None):
+    """
+    Plot precipitation for a single day (data is already daily accumulated)
+    
+    Args:
+        store_path: Path to Zarr store
+        day_idx: Index of day to plot
+        nside: HEALPix NSIDE parameter
+        lat_min, lat_max, lon_min, lon_max: Region bounds
+        cmap: Colormap
+        save_path: Path to save figure
+    """
+    #Load data
+    ds_zarr = xr.open_zarr(store_path, consolidated=True)
+    npix = hp.nside2npix(nside)
+    
+    #Get pixel coordinates
+    pixels = np.arange(npix)
+    theta, phi = hp.pix2ang(nside, pixels)
+    lats = 90.0 - np.degrees(theta)
+    lons = np.degrees(phi)  # 0-360
+    
+    #Convert longitude from 0-360 to -180-180
+    lons = np.where(lons > 180, lons - 360, lons)
+    
+    print(f"=== Coordinate ranges ===")
+    print(f"Lat range: {lats.min():.2f} to {lats.max():.2f}")
+    print(f"Lon range: {lons.min():.2f} to {lons.max():.2f}")
+    
+    #Filter to region
+    mask = (
+        (lats >= lat_min) & (lats <= lat_max) &
+        (lons >= lon_min) & (lons <= lon_max)
+    )
+    print(f"Pixels in region: {np.sum(mask)}")
+    
+    #Get daily data 
+    daily_data = ds_zarr['precipitation'].isel(time=day_idx)
+    
+    print(f"\nDaily precipitation statistics:")
+    print(f"  Min: {np.nanmin(daily_data.values):.2f} mm")
+    print(f"  Max: {np.nanmax(daily_data.values):.2f} mm")
+    print(f"  Mean: {np.nanmean(daily_data.values):.2f} mm")
+    
+    #Get data for region
+    lats_region = lats[mask]
+    lons_region = lons[mask]
+    data_region = daily_data.values[mask]
+    
+    #Remove UNSEEN and NaN values
+    valid_mask = (data_region != hp.UNSEEN) & (~np.isnan(data_region))
+    lats_plot = lats_region[valid_mask]
+    lons_plot = lons_region[valid_mask]
+    data_plot = data_region[valid_mask]
+    
+    print(f"  Valid pixels in region: {len(data_plot)}")
+    print(f"  Pixels with rain (>0.1mm): {np.sum(data_plot > 0.1)}")
+    
+    
+    #Create figure
+    fig, ax = plt.subplots(figsize=(14, 10), 
+                           subplot_kw={'projection': ccrs.PlateCarree()})
+    
+    #Plot
+    sc = ax.scatter(
+        lons_plot, lats_plot, c=data_plot,
+        cmap=cmap, vmin=0, vmax=60,
+        s=65, marker = 'o', transform=ccrs.PlateCarree(),
+        edgecolors='none', linewidth=0.5
+    )
+    
+    ax.coastlines(linewidth=1.5)
+    gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.5)
+    gl.top_labels = False
+    gl.right_labels = False
+    ax.set_extent([lon_min, lon_max, lat_min, lat_max])
+    
+    #Get date
+    date_str = pd.Timestamp(ds_zarr.time.values[day_idx]).strftime('%Y-%m-%d')
+    ax.set_title(f'Daily Precipitation | NSIDE={nside}\n{date_str}', 
+                 fontsize=14, fontweight='bold')
+    
+    cbar = plt.colorbar(sc, ax=ax, label='Precipitation (mm/day)', 
+                       shrink=0.8, pad=0.05)
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Saved: {save_path}")
+    
+    plt.show()
+    return fig
 
 def create_animation(store_path, start_idx=0, end_idx=None, nside=128,
                      lat_min=14.0, lat_max=33.0,
@@ -138,9 +233,7 @@ def create_animation(store_path, start_idx=0, end_idx=None, nside=128,
     return output_file
 
 
-# ============================================================================
-# USAGE EXAMPLES
-# ============================================================================
+## run the function
 
 if __name__ == "__main__":
     
@@ -154,6 +247,15 @@ if __name__ == "__main__":
     print("="*60)
     print("IMERG Daily Precipitation Visualization")
     print("="*60)
+
+    #Plot single day
+    # need to change day index (day_idx) for different day
+    # keep in mind, that python starts indexing with 0
+    print("\n Plotting single day ...")
+    plot_single_day(store_path, day_idx=0, nside=nside,
+                   lat_min=lat_min, lat_max=lat_max,
+                   lon_min=lon_min, lon_max=lon_max,
+                   save_path='day0_scatter.png')
     
     print("\n Creating animation...")
     create_animation(store_path, start_idx=0, end_idx=31, nside=nside,
