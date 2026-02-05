@@ -220,3 +220,7 @@ __marimo__/
 #Ignore .txt
 *.txt
 *.png
+
+# Ignore large .gif files
+*.gif
+

@@ -199,7 +199,7 @@ def daily_routine(start, end, nside=128):
     end_time = datetime.datetime.strptime(end, "%Y-%m-%d %H:%M:%S")
     
     current = start_time
-    store_zarr = "ZARR/IMERG_PRECIP.zarr"
+    store_zarr = "../ZARR/IMERG_PRECIP.zarr"
     
     # Create ZARR directory if it doesn't exist
     os.makedirs("ZARR", exist_ok=True)
@@ -243,10 +243,10 @@ def daily_routine(start, end, nside=128):
                 os.remove(tmp_file)
                 print(f"    Cleaned up temporary file: {tmp_file}")
             
-            print(f"‚úì Successfully processed {date_str_iso}")
+            print(f"Successfully processed {date_str_iso}")
             
         except Exception as e:
-            print(f"‚úó Failed processing {date_str_iso}: {e}")
+            print(f"Failed processing {date_str_iso}: {e}")
             import traceback
             traceback.print_exc()
             
