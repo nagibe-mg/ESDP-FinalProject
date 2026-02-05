@@ -61,6 +61,12 @@ ESDP-FinalProject/
 ERA5-Land is a reanalysis dataset providing a consistent view of the evolution of land variables over several decades at an enhanced resolution compared to ERA5. ERA5-Land has been produced by replaying the land component of the ECMWF ERA5 climate reanalysis. Reanalysis combines model data with observations from across the world into a globally complete and consistent dataset using the laws of physics. Reanalysis produces data that goes several decades back in time, providing an accurate description of the climate of the past.
 The chosen variable is total precipitation, daily sum. Data is given in m/day and the format is NETCDF and later processed to Zarr.
 
+### Dataset IMERG
+IMERG (Integrated Multi-satellitE Retrievals for GPM) provides satellite-based precipitation estimates across most of Earth's surface. It's especially useful for oceans and remote areas without ground-based weather stations.
+Learn more: [IMERG Overview](https://gpm.nasa.gov/data/imerg).
+We use half-hourly data from GES DISC's "IMERG Final Run" and convert it to daily totals:
+```ds = (ds['precipitation'] * 0.5).sum(dim='time')```
+
 ### Implementation Details for ERA5 Data
 
 1. Control Flow:
@@ -74,13 +80,13 @@ Data is archived in a Zarr store using a group-based hierarchy and chunked by th
 5. Visualization: 
 It loads data for the selected spatial domain and plots using a scatter plot function. To ensure scientific comparability, all plots use a fixed color scale (0 to 60 mm/day) and consistent colormaps (blue scale). With these frames, a gif animation was created. 
 
-## Implementation Details for IMERG data
+### Implementation Details for IMERG data
 
 **Helpful resources:**
 - tutorial for downloading IMERG data: [IMERG tutorial](https://gpm-api.readthedocs.io/en/latest/tutorials/tutorial_02_IMERG.html)
 - set-up of GPM API: [gpm-api](https://gpm-api.readthedocs.io/en/latest/03_quickstart.html)
 
-## Run the code:
+#### Run the code:
 1. To work with the given code, you need to install the following modules preferably in a virtual environment or via conda:
     - `datetime`, `timedelta`
     - `os`
@@ -96,7 +102,7 @@ It loads data for the selected spatial domain and plots using a scatter plot fun
 4. To create the statistics of the data, you need to run the `statistics.py` script. 
 5. To compare both datasets, the ipython-notebook `compare_era5_IMERG.py` needs to be executed.
 
-## Technical Notes:
+### Technical Notes:
 
 - Large files are managed using Git LFS
 - Data is stored in ZARR format for efficient access
