@@ -271,91 +271,98 @@ def create_precip_animation(store_path, start_date, end_date, nside_val=128):
     display(Image(filename=gif_path))
 
 
-
-    
-def process_plot_difference(era5_path, imerg_path, diff_store_path, target_date, nside_val=128):
+def compare_years_batch_mode(path1, path2, diff_store_path, date1, date2, output_dir, nside_val=128):
     nside_group = f"NSIDE_{nside_val}"
+    
+    try: ds1 = xr.open_zarr(path1, group=nside_group, consolidated=True)
+    except: ds1 = xr.open_zarr(path1, consolidated=True)
+    try: ds2 = xr.open_zarr(path2, group=nside_group, consolidated=True)
+    except: ds2 = xr.open_zarr(path2, consolidated=True)
 
-    #load data
-    ds_era5 = xr.open_zarr(era5_path, group=f"NSIDE_{nside_val}", consolidated=True)
-    ds_imerg = xr.open_zarr(imerg_path, group=f"NSIDE_{nside_val}", consolidated=True)
-    # Select date
     try:
-        era5_sample = ds_era5.sel(time=target_date, method='nearest')
-        imerg_sample = ds_imerg.sel(time=target_date, method='nearest')
+        sample1 = ds1.sel(time=date1, method='nearest')
+        sample2 = ds2.sel(time=date2, method='nearest')
     except KeyError:
-        print("Date not found.")
+        print(f"Skipping {date1}: Date not found.")
         return
 
-    era5_mm = era5_sample['tp'].values * 1000 
+    def get_mm(s):
+        if 'tp' in s: return s['tp'].values * 1000
+        return np.zeros(len(s))
+
+    data1 = np.nan_to_num(get_mm(sample1), nan=0.0)
+    data2 = np.nan_to_num(get_mm(sample2), nan=0.0)
+    diff_mm = data1 - data2
+
+    # save to Zarr . Reshape to (1, N) for time dimension
+    diff_reshaped = diff_mm[None, :] 
     
-    #### change name here
-    imerg_mm = imerg_sample[imerg_var_name].values
-    
-    # Handle NaNs
-    era5_mm = np.nan_to_num(era5_mm, nan=0.0)
-    imerg_mm = np.nan_to_num(imerg_mm, nan=0.0)
-    # Calculate differences
-    diff_mm = era5_mm - imerg_mm
-    diff_mm.name = "precipitation_difference" # Name the variable for the new Zarr
-    diff_mm.attrs['units'] = "mm"
-    diff_mm.attrs['description'] = "ERA5 - IMERG (Positive = ERA5 wetter)"
-    
-    print(f"Max Overestimate={diff_mm.max():.2f}mm, Max Underestimate={diff_mm.min():.2f}mm")
-    
-    ds_diff = diff_mm.to_dataset()
+    diff_da = xr.DataArray(
+        diff_reshaped, 
+        dims=("time", "healpix_pixel"),
+        coords={"time": [sample1.time.values]},
+        name="interannual_diff"
+    )
+    diff_da.attrs['units'] = "mm"
+    diff_da.attrs['description'] = f"{date1} minus {date2}"
+
+    ds_diff = diff_da.to_dataset()
     ds_diff = ds_diff.chunk({'time': 1, 'healpix_pixel': -1})
 
+    # Append Logic
     if not os.path.exists(diff_store_path):
-         mode = 'w'
-         append_dim = None
+         mode = 'w'; append_dim = None
     else:
          if os.path.exists(os.path.join(diff_store_path, nside_group)):
-             mode = 'a'
-             append_dim = 'time'
+             mode = 'a'; append_dim = 'time'
          else:
-             mode = 'a'
-             append_dim = None
+             mode = 'a'; append_dim = None
 
-    print(f"Saving difference for {target_date} to {diff_store_path}...")
-    
     if append_dim:
         ds_diff.to_zarr(diff_store_path, group=nside_group, mode=mode, append_dim=append_dim, consolidated=True)
     else:
         ds_diff.to_zarr(diff_store_path, group=nside_group, mode=mode, consolidated=True)
-        
-    #plotting, delete after ensuring it works for one day
-    
+
     npix = len(diff_mm)
     theta, phi = hp.pix2ang(nside_val, np.arange(npix))
     lats = 90.0 - np.degrees(theta)
     lons = np.degrees(phi)
     lons = (lons + 180) % 360 - 180 
-    mask = (lons >= -118) & (lons <= -86) & (lats >= 14) & (lats <= 33)
-    plot_lons = lons[mask]
-    plot_lats = lats[mask]
-    plot_diff = diff_mm[mask]
-
-    #Plot
-    fig, ax = plt.subplots(figsize=(12, 8))
     
-    # Diverging Colormap: RdBu (Red=Dry, Blue=Wet)
-    # vmin/vmax centered on 0 for fair comparison
-    limit = 15 # +/- 15mm difference
-    sc = ax.scatter(plot_lons, plot_lats, c=plot_diff, cmap="RdBu", 
+    mask = (lons >= -118) & (lons <= -86) & (lats >= 14) & (lats <= 33)
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Plotting
+    limit = 50 
+    sc = ax.scatter(lons[mask], lats[mask], c=diff_mm[mask], cmap="RdBu", 
                     vmin=-limit, vmax=limit, s=65, marker='o', edgecolors='none')
     
-    add_mexico_border_standard()
-    
+    # Border (Embedded for speed)
+    try:
+        url = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries/MEX.geo.json"
+        with urllib.request.urlopen(url) as response:
+            geom = json.load(response)['features'][0]['geometry']
+        coords = [geom['coordinates']] if geom['type'] == 'Polygon' else geom['coordinates']
+        for poly in coords:
+            ring = np.array(poly[0])
+            plt.plot(ring[:, 0], ring[:, 1], 'k-', linewidth=1.0)
+    except: pass
+
     cbar = plt.colorbar(sc, ax=ax, orientation='horizontal', pad=0.1, shrink=0.7)
-    cbar.set_label("Difference (mm): ERA5 - IMERG\n(Blue = ERA5 Higher, Red = IMERG Higher)", fontsize=12)
-    
-    ax.set_title(f"ERA5 vs IMERG | {target_date}", fontsize=14)
+    cbar.set_label(f"Diff (mm): {date1} - {date2}", fontsize=12)
+    ax.set_title(f"{date1} - {date2}", fontsize=14)
     ax.set_xlim([-118, -86])
     ax.set_ylim([14, 33])
-    ax.grid(True, linestyle='--', alpha=0.5)
     
-    plt.show()
+    # Save and Close
+    filename = f"diff_{date1}_vs_{date2}.png"
+    save_path = os.path.join(output_dir, filename)
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close(fig) # IMPORTANT: Frees memory
+    
+    print(f"Processed & Saved: {date1}")
+    
 
 # control flow
 
