@@ -2,7 +2,11 @@
 ## Final Project - Earth System Data Processing - WiSE 25/26
 **Authors: Johanna Kasishcke and Nagibe Maroun González**
 
-Collection of notebooks and information regarding the final project for Earth System Data Processing.
+Collection of notebooks and information regarding the final project for Earth System Data Processing. 
+Main responsible:
+- IMERG data processing: Johanna
+- ERA5 data processing: Nagibe
+
 
 ### Overview
 The project consists of a robust automated processing chain to compare precipitation data from two different sources: ERA5 dataset and IMERG data. This is relevant because depending on how the data was acquired, it can be different. More specifically, ERA5 deals with modelled data (form a physical model), while IMERG is satellite data. 
@@ -15,10 +19,28 @@ Data Optimization: Processes raw, heavy satellite data into lightweight, region-
 Analysis & Visualization: Generates daily comparison maps, calculates inter-annual variability (e.g., 2014 vs. 2015), and produces animated GIFs of weather patterns over Mexico.
 
 ### Repository Structure
-- 'ERA5_Data/ERA5_Precipitation.ipynb': The main control notebook and visualization interface for data from 2014.
-- 'ERA5_Data/ERA5_Precipitation2015.ipynb': The main control notebook and visualization interface for data from 2015.
-- 'ERA5_Data/RealDailyRoutineERA5.py': Contains the core logic for downloading, regridding, saving and some plotting routines.
-- 'ERA5_Data/Imerg_ERA5_Comparison.ipynb': Comparison for interannual data. (misleading name)
+```
+ESDP-FinalProject/
+└── ERA5_Data/
+    ├── ERA5_Precipitation.ipynb': The main control notebook and visualization interface for data from 2014.
+    ├── ERA5_Precipitation2015.ipynb': The main control notebook and visualization interface for data from 2015.
+    ├── RealDailyRoutineERA5.py': Contains the core logic for downloading, regridding, saving and some plotting routines.
+    ├── Imerg_ERA5_Comparison.ipynb': Comparison for interannual data. (misleading name)
+└── GPM/
+    ├── data/              # Downloaded datasets
+    ├── figures/           # Generated plots and animations
+    ├── notebooks/         # Jupyter notebooks for analysis
+    │   ├── analyse_stats.ipynb
+    │   └── compare_era5_IMERG.ipynb
+    ├── scripts/           # Main processing scripts
+    │   ├── configfile.py       # Your NASA credentials go here
+    │   ├── ControlFlowIMERG.py # Core data processing
+    │   ├── runIMERG.py         # Run this to start processing
+    │   ├── plot.py             # Create visualizations
+    │   └── statistics.py       # Generate statistics
+    └── ZARR/              # Processed data storage
+        └── IMERG_PRECIP_nside128.zarr
+```        
 
 ### Requirements
 - xarray 
@@ -31,6 +53,8 @@ Analysis & Visualization: Generates daily comparison maps, calculates inter-annu
 - datetime
 - json
 - imegeio.v2
+- gpm-api  &rarr; install via `pip install gpm-api` (there might be dependency issues, but for me it worked until now)
+- Possibly: pyresample via `conda install -c conda-forge pyresample` (there might be dependency issues, but for me it worked until now)
 
 
 ### Dataset ERA5
@@ -50,7 +74,33 @@ Data is archived in a Zarr store using a group-based hierarchy and chunked by th
 5. Visualization: 
 It loads data for the selected spatial domain and plots using a scatter plot function. To ensure scientific comparability, all plots use a fixed color scale (0 to 60 mm/day) and consistent colormaps (blue scale). With these frames, a gif animation was created. 
 
+## Implementation Details for IMERG data
 
+**Helpful resources:**
+- tutorial for downloading IMERG data: [IMERG tutorial](https://gpm-api.readthedocs.io/en/latest/tutorials/tutorial_02_IMERG.html)
+- set-up of GPM API: [gpm-api](https://gpm-api.readthedocs.io/en/latest/03_quickstart.html)
+
+## Run the code:
+1. To work with the given code, you need to install the following modules preferably in a virtual environment or via conda:
+    - `datetime`, `timedelta`
+    - `os`
+    - `cartopy.crs` 
+    - `matplotlib`
+    - `xarray`
+    - `healpy`
+2. The actual code is written in the `ControlFlowIMERG.py` script. This script contains the downloading and processing routine. To execute this code, the file `runIMERG.py`needs to be run. In this file, the timeperiod of interest can be defined.
+3. To plot the data and create an animation, you need to run the file `plot.py` in the scripts folder.
+    - To plot single day, you need to change day index (day_idx) for different day
+    - keep in mind, that python starts indexing with 0
+    - images and other graphics are stored in the `figures` folder
+4. To create the statistics of the data, you need to run the `statistics.py` script. 
+5. To compare both datasets, the ipython-notebook `compare_era5_IMERG.py` needs to be executed.
+
+## Technical Notes:
+
+- Large files are managed using Git LFS
+- Data is stored in ZARR format for efficient access
+- All outputs are saved to the figures/ folder
 
 ### Challenges
 * Main issue was the IMERG API. It was difficult to constrain variables such as spatial domain, selected parameters, data frequency, etc. This caused very large download volume. We had to rethink our strategy. 
@@ -59,4 +109,5 @@ It loads data for the selected spatial domain and plots using a scatter plot fun
 
 ### References
 Copernicus Climate Change Service (C3S)(2019): ERA5-Land hourly data from 1950 to present. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.e2161bac
-GPM IMERG: Huffman, G. et al. (2019). GPM IMERG Final Precipitation L3 1 day 0.1 degree x 0.1 degree V06, Greenbelt, MD, Goddard Earth Sciences Data and Information Services Center (GES DISC)
+
+Huffman, G.J., E.F. Stocker, D.T. Bolvin, E.J. Nelkin, Jackson Tan (2023), GPM IMERG Final Precipitation L3 1 day 0.1 degree x 0.1 degree V07, Edited by Andrey Savtchenko, Greenbelt, MD, Goddard Earth Sciences Data and Information Services Center (GES DISC), Accessed: [04.02.2026], [10.5067/GPM/IMERGDF/DAY/07](https://doi.org/10.5067/GPM/IMERGDF/DAY/07)

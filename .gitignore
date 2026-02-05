@@ -222,5 +222,5 @@ __marimo__/
 *.png
 
 # Ignore large .gif files
-*.gif
+#*.gif
 
